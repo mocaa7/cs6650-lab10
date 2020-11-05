@@ -7,8 +7,8 @@ import com.rabbitmq.client.DeliverCallback;
 
 public class BullyAlgoRabbit implements Runnable {
   private final static String QUEUE_NAME = "message_queue";
-  private final static String EXCHANGE_NAME = "LEADER";
   private final static String I_AM_LEADER = "LEADER";
+  private final static String SUBSCRIBE_ALL = "ALL";
 
   private boolean isElectionPhase;
   private int numNodes;
@@ -41,6 +41,15 @@ public class BullyAlgoRabbit implements Runnable {
       System.out.println(" [x] Done");
       this.channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
     };
+
+    try {
+      channel.queueBind(QUEUE_NAME, "", SUBSCRIBE_ALL);
+      for (int i = 1; i < this.id; i++) {
+        channel.queueBind(QUEUE_NAME, "", Integer.toString(i));
+      }
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
   }
 
   public void setNumNodes(int numNodes) {
@@ -49,46 +58,50 @@ public class BullyAlgoRabbit implements Runnable {
 
   @Override
   public void run() {
-
-    while (this.isLeader) {
-      try {
-        Thread.sleep(1000);
-        System.out.println(this.id + ": I am leader");
-        channel.basicConsume(QUEUE_NAME, true, this.ack, consumerTag -> {});
-      } catch (Exception e) {
-        e.printStackTrace();
+    while (true) {
+      if (this.isLeader) {
+        try {
+          Thread.sleep(1000);
+          System.out.println(this.id + ": I am leader");
+          channel.basicConsume(QUEUE_NAME, true, this.ack, consumerTag -> {
+          });
+        } catch (Exception e) {
+          e.printStackTrace();
+        }
+      } else if (!this.isLeader && !this.isElectionPhase) {
+        try {
+          Thread.sleep(2000);
+          System.out.println(this.id + ": I am a follower, " + this.currentLeader + " is the leader");
+          channel.basicPublish("", QUEUE_NAME, null, "hi".getBytes("UTF-8"));
+        } catch (Exception e) {
+          e.printStackTrace();
+        }
+      } else if (!this.isLeader && this.isElectionPhase) {
+        try {
+          Thread.sleep(1000);
+          channel.basicPublish("", QUEUE_NAME, null, "hi".getBytes("UTF-8"));
+          // Check if it is the highest leader surviving, if so then declare the leader
+          if (isHighest()) {
+            // Notify the followers
+          } else {
+            
+          }
+        } catch (Exception e) {
+          e.printStackTrace();
+        }
       }
     }
+  }
 
-    while (!isLeader) {
-      try {
-        Thread.sleep(1000);
-        System.out.println(this.id + ": I am a follower, " + this.currentLeader + " is the leader");
-        channel.basicPublish("", QUEUE_NAME, null, "hi".getBytes("UTF-8"));
-      } catch (Exception e) {
-        e.printStackTrace();
-      }
-    }
-
-    // try {
-    // // Sends a request
-    // Thread.sleep(5000); // 5 sec
-
-    // // Check for a response
-    // }catch(
-    // InterruptedException e)
-    // {
-    // e.printStackTrace();
-    // }
-
-    // }
+  private boolean isHighest() {
+    return false;
   }
 
   // notify everyone that you are leader
   public void notifyOthers() {
     try {
-      // channel.exchangeDeclare(EXCHANGE_NAME, "direct");
-      channel.basicPublish(EXCHANGE_NAME, "black", null, I_AM_LEADER.getBytes());
+      // channel.exchangeDeclare("", "direct");
+      channel.basicPublish("", "black", null, I_AM_LEADER.getBytes());
     } catch (Exception e) {
       e.printStackTrace();
     }
@@ -97,8 +110,8 @@ public class BullyAlgoRabbit implements Runnable {
   public void sendElectionResponse() {
     try {
       String queueName = channel.queueDeclare().getQueue();
-      channel.queueBind(queueName, EXCHANGE_NAME, Integer.toString(this.id + 1));
-      // channel.queueBind(queueName, EXCHANGE_NAME, "black");
+      channel.queueBind(queueName, "", Integer.toString(this.id + 1));
+      // channel.queueBind(queueName, "", "black");
     } catch (Exception e) {
       e.printStackTrace();
     }
@@ -112,10 +125,10 @@ public class BullyAlgoRabbit implements Runnable {
 
     try {
       String queueName = channel.queueDeclare().getQueue();
-      channel.queueBind(queueName, EXCHANGE_NAME, Integer.toString(this.id));
+      channel.queueBind(queueName, "", Integer.toString(this.id));
       channel.basicConsume(QUEUE_NAME, true, deliverCallback, consumerTag -> {
       });
-      // channel.queueBind(queueName, EXCHANGE_NAME, "black");
+      // channel.queueBind(queueName, "", "black");
     } catch (Exception e) {
       e.printStackTrace();
     }
@@ -126,5 +139,5 @@ public class BullyAlgoRabbit implements Runnable {
     // TODO: start the election
     System.out.println(this.id + "started election");
   }
-
 }
+
